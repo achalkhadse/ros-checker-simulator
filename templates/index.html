@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROS Code Checker and Simulator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .upload-container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            margin-bottom: 1rem;
+            transition: border-color 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: rgba(0, 123, 255, 0.1);
+        }
+        .results-container {
+            display: none;
+            margin-top: 2rem;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 2rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="text-center mb-4">
+            <h1>ROS Code Checker and Simulator</h1>
+            <p class="lead">Upload your ROS/ROS2 code for validation and simulation</p>
+        </header>
+
+        <main class="upload-container">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Upload Code</h5>
+                    <p class="card-text">Upload a Python or C++ ROS node, or a ZIP file containing a ROS package.</p>
+                    
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="upload-area" id="uploadArea">
+                            <input type="file" id="fileInput" name="file" accept=".py,.cpp,.zip" style="display: none;">
+                            <p>Drag and drop your file here or click to browse</p>
+                            <button type="button" class="btn btn-primary" id="browseBtn">Browse Files</button>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-success" id="submitBtn">Check Code</button>
+                        </div>
+                    </form>
+                    
+                    <div class="loading" id="loading">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Checking code...</p>
+                    </div>
+                    
+                    <div class="results-container" id="resultsContainer">
+                        <h5>Results</h5>
+                        <div id="resultsContent"></div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" id="simulateBtn">Run Simulation</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const browseBtn = document.getElementById('browseBtn');
+            const uploadForm = document.getElementById('uploadForm');
+            const loading = document.getElementById('loading');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsContent = document.getElementById('resultsContent');
+            const simulateBtn = document.getElementById('simulateBtn');
+            
+            let currentResultId = null;
+            
+            // File input handlers
+            browseBtn.addEventListener('click', () => fileInput.click());
+            
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files.length > 0) {
+                    uploadArea.querySelector('p').textContent = `Selected: ${fileInput.files[0].name}`;
+                }
+            });
+            
+            // Drag and drop handlers
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                
+                if (e.dataTransfer.files.length > 0) {
+                    fileInput.files = e.dataTransfer.files;
+                    uploadArea.querySelector('p').textContent = `Selected: ${fileInput.files[0].name}`;
+                }
+            });
+            
+            // Form submission
+            uploadForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                if (fileInput.files.length === 0) {
+                    alert('Please select a file to upload');
+                    return;
+                }
+                
+                loading.style.display = 'block';
+                resultsContainer.style.display = 'none';
+                
+                const formData = new FormData(uploadForm);
+                
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    
+                    if (data.error) {
+                        alert(`Error: ${data.error}`);
+                        return;
+                    }
+                    
+                    currentResultId = data.result_id;
+                    
+                    // Display results
+                    const errors = data.check_report.errors;
+                    const warnings = data.check_report.warnings;
+                    const safetyIssues = data.check_report.safety_issues;
+                    
+                    let html = '';
+                    
+                    if (errors.length > 0) {
+                        html += '<div class="alert alert-danger"><h6>Errors:</h6><ul>';
+                        errors.forEach(error => {
+                            html += `<li>${error}</li>`;
+                        });
+                        html += '</ul></div>';
+                    }
+                    
+                    if (warnings.length > 0) {
+                        html += '<div class="alert alert-warning"><h6>Warnings:</h6><ul>';
+                        warnings.forEach(warning => {
+                            html += `<li>${warning}</li>`;
+                        });
+                        html += '</ul></div>';
+                    }
+                    
+                    if (safetyIssues.length > 0) {
+                        html += '<div class="alert alert-info"><h6>Safety Issues:</h6><ul>';
+                        safetyIssues.forEach(issue => {
+                            html += `<li>${issue}</li>`;
+                        });
+                        html += '</ul></div>';
+                    }
+                    
+                    if (errors.length === 0 && warnings.length === 0 && safetyIssues.length === 0) {
+                        html += '<div class="alert alert-success">No issues found in the code!</div>';
+                    }
+                    
+                    html += `<div class="mt-3"><h6>ROS Elements:</h6>
+                        <ul>
+                            <li>init_node: ${data.check_report.ros_elements.init_node ? 'Yes' : 'No'}</li>
+                            <li>Publishers: ${data.check_report.ros_elements.publishers.length}</li>
+                            <li>Subscribers: ${data.check_report.ros_elements.subscribers.length}</li>
+                            <li>Services: ${data.check_report.ros_elements.services.length}</li>
+                        </ul>
+                    </div>`;
+                    
+                    resultsContent.innerHTML = html;
+                    resultsContainer.style.display = 'block';
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    alert(`Error: ${error.message}`);
+                });
+            });
+            
+            // Simulation button
+            simulateBtn.addEventListener('click', () => {
+                if (!currentResultId) return;
+                
+                loading.style.display = 'block';
+                loading.querySelector('p').textContent = 'Running simulation...';
+                
+                fetch(`/simulate/${currentResultId}`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    
+                    if (data.error) {
+                        alert(`Error: ${data.error}`);
+                        return;
+                    }
+                    
+                    // Redirect to simulation results page
+                    window.location.href = `/simulation_results/${currentResultId}`;
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    alert(`Error: ${error.message}`);
+                });
+            });
+        });
+    </script>
+</body>
+</html>
